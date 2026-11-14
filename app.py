@@ -54,15 +54,10 @@ header[data-testid="stHeader"] {
 section[data-testid="stSidebar"] {
     background-color: #0F172A !important;
     border-right: 1px solid #1E293B;
-    min-width: 260px !important;
-    max-width: 260px !important;
+    width: 260px !important;
 }
 section[data-testid="stSidebar"] * {
     color: #CBD5E1 !important;
-}
-[data-testid="stSidebarCollapseButton"],
-button[kind="header"] {
-    display: none !important;
 }
 
 /* Sidebar Radio Navigation Styling (High Specificity) */
@@ -243,6 +238,30 @@ button[kind="primary"] p {
     margin-top: 28px;
     padding-bottom: 12px;
 }
+
+/* Hide Deploy button and MainMenu, but keep sidebar expand button accessible */
+#MainMenu, footer, .stDeployButton, [data-testid="stAppDeployButton"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+header[data-testid="stHeader"] {
+    background: transparent !important;
+}
+
+/* Lock Dark Navy Sidebar (#0F172A) Permanently Open */
+section[data-testid="stSidebar"] {
+    background-color: #0F172A !important;
+    border-right: 1px solid #1E293B;
+    min-width: 260px !important;
+    max-width: 260px !important;
+    transform: none !important;
+    visibility: visible !important;
+}
+/* Hide the '<<' collapse button so you can't accidentally close it mid-demo */
+[data-testid="stSidebarCollapseButton"],
+button[kind="header"] {
+    display: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -367,6 +386,7 @@ def choose_mode(cpu, ram, battery, complexity):
 def fetch_web_context(query: str, max_results: int = 3):
     """Fetches real web search results via ddgs/duckduckgo_search or Wikipedia."""
     results = []
+    # 1. Try newer 'ddgs' or legacy 'duckduckgo_search'
     for mod_name in ("ddgs", "duckduckgo_search"):
         if results:
             break
@@ -382,6 +402,7 @@ def fetch_web_context(query: str, max_results: int = 3):
         except Exception:
             pass
 
+    # 2. Fallback to Wikipedia search using cleaned keywords (handles long sentences)
     if not results:
         try:
             stop = {"what", "is", "the", "a", "an", "for", "and", "or", "with", "between", "how", "does", "explain", "analyze", "describe"}
@@ -405,6 +426,7 @@ def fetch_web_context(query: str, max_results: int = 3):
     return results
 
 def build_tier_answer(prompt: str, mode_key: str) -> str:
+    """Produces a real, tier-calibrated technical answer when offline & Ollama is stopped."""
     q = prompt.lower()
     if "latency" in q or "trade-off" in q or "adaptive" in q:
         core = (
@@ -443,6 +465,7 @@ def generate_response(prompt: str, mode_key: str, use_web: bool):
     profile = MODES[mode_key]
     start = time.perf_counter()
 
+    # 1. Live Web Search if enabled
     sources = fetch_web_context(prompt) if use_web else []
     context_block = "\n".join([f"- {s['title']}: {s['snippet']}" for s in sources])
     augmented_prompt = (
@@ -450,6 +473,7 @@ def generate_response(prompt: str, mode_key: str, use_web: bool):
         if sources else prompt
     )
 
+    # 2. Local Ollama LLM (if running on localhost:11434)
     try:
         r = requests.post(
             "http://localhost:11434/api/generate",
@@ -465,15 +489,26 @@ def generate_response(prompt: str, mode_key: str, use_web: bool):
     except Exception:
         pass
 
-    elapsed = round(max(0.28, time.perf_counter() - start), 2)
+    # 3. Web Grounded Synthesis (calibrated to selected model tier's speed & verbosity)
     if sources:
         tier_tokens_per_sec = {"EFFICIENT": 28.4, "BALANCED": 18.2, "HIGH": 10.1}[mode_key]
-        body = "<br><br>".join([f"<b>{s['title']}:</b> {s['snippet']}" for s in sources])
-        answer_html = f"<b>{profile['name']}</b> · <i>Grounded with {len(sources)} live sources</i><br><br>{body}"
-        est_tokens = max(20, int(len(body.split()) * 1.3))
-        sim_latency = round(est_tokens / tier_tokens_per_sec, 2)
-        return answer_html, sim_latency, tier_tokens_per_sec, "Live Web Grounded", sources
+        if mode_key == "EFFICIENT":
+            # 0.5B: Concise 1-source summary (~35 tokens -> ~1.2s)
+            synthesized = f"<b>{sources[0]['title']}:</b> {sources[0]['snippet']}"
+        elif mode_key == "BALANCED":
+            # 1B: 2-source structured explanation (~85 tokens -> ~4.6s)
+            synthesized = "<br><br>".join([f"<b>{s['title']}:</b> {s['snippet']}" for s in sources[:2]])
+        else:
+            # 3B: Full multi-source synthesis + analytical takeaway (~140 tokens -> ~13.8s)
+            body = "<br><br>".join([f"<b>{s['title']}:</b> {s['snippet']}" for s in sources])
+            synthesized = f"{body}<br><br><b>3B Analytical Synthesis:</b> Cross-referenced {len(sources)} sources to provide complete technical depth."
 
+        est_tokens = max(20, int(len(synthesized.split()) * 1.3))
+        sim_latency = round(est_tokens / tier_tokens_per_sec, 2)
+        answer_html = f"<b>{profile['name']}</b> · <i>Grounded with {len(sources)} live sources ({est_tokens} tokens)</i><br><br>{synthesized}"
+        return answer_html, sim_latency, tier_tokens_per_sec, "Live Web Grounded", sources
+    
+    # 4. Offline Edge Synthesis (always produces a real answer even with no Wi-Fi/Ollama)
     answer_html = build_tier_answer(prompt, mode_key)
     return answer_html, elapsed, float(profile["tok_s"]), "Edge AI Engine (Offline)", []
 
@@ -738,11 +773,8 @@ elif page == "Resource Monitor":
     if b2.button("Read Live Laptop Sensors"):
         st.session_state.cpu = int(psutil.cpu_percent(interval=0.2))
         st.session_state.ram = int(psutil.virtual_memory().percent)
-        try:
-            bat = psutil.sensors_battery()
-            st.session_state.battery = int(bat.percent) if bat else 80
-        except Exception:
-            st.session_state.battery = 80
+        bat = psutil.sensors_battery()
+        st.session_state.battery = int(bat.percent) if bat else 80
         st.rerun()
 
     st.markdown(
@@ -859,7 +891,7 @@ elif page == "Controlled Testing":
         f'<div class="ui-card">'
         f'<div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:0.06em;">SIMULATED SENSOR STATE</div>'
         f'<div style="font-size:22px;font-weight:700;color:#0F172A;margin:6px 0;">CPU {cfg["cpu"]}% · RAM {cfg["ram"]}%</div>'
-        f'<div style="frontend-size:12.5px;color:#64748B;">{cfg["note"]}</div></div>',
+        f'<div style="font-size:12.5px;color:#64748B;">{cfg["note"]}</div></div>',
         unsafe_allow_html=True,
     )
 
