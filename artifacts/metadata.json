@@ -1,0 +1,13 @@
+{
+  "model_type": "TF-IDF + LogisticRegression",
+  "labels": [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ],
+  "random_seed": 42,
+  "training_rows": 45,
+  "test_rows": 15,
+  "heldout_accuracy_demo_only": 0.9333333333333333,
+  "dataset_note": "Small manually authored demonstration dataset; not a published benchmark."
+}
