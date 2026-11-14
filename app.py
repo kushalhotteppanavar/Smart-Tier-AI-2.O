@@ -773,8 +773,11 @@ elif page == "Resource Monitor":
     if b2.button("Read Live Laptop Sensors"):
         st.session_state.cpu = int(psutil.cpu_percent(interval=0.2))
         st.session_state.ram = int(psutil.virtual_memory().percent)
-        bat = psutil.sensors_battery()
-        st.session_state.battery = int(bat.percent) if bat else 80
+        try:
+            bat = psutil.sensors_battery()
+            st.session_state.battery = int(bat.percent) if bat else 80
+        except Exception:
+            st.session_state.battery = 80  # Safe fallback for cloud Linux servers
         st.rerun()
 
     st.markdown(
