@@ -13,8 +13,8 @@ from sklearn.linear_model import LogisticRegression
 # 1. PAGE CONFIG & HIGH-CONTRAST CSS STYLING
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="AdaptiLLM 2.0 · Adaptive Edge Intelligence",
-    page_icon="A",
+    page_title="SmartTier AI 2.0 · Adaptive Edge Intelligence",
+    page_icon="S",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -410,7 +410,7 @@ def fetch_web_context(query: str, max_results: int = 3):
             res = requests.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={"action": "query", "list": "search", "srsearch": keywords, "format": "json", "srlimit": 2},
-                headers={"User-Agent": "AdaptiLLM-Edge-Demo/2.0"},
+                headers={"User-Agent": "SmartTierAI-Edge-Demo/2.0"},
                 timeout=4,
             ).json()
             for item in res.get("query", {}).get("search", []):
@@ -489,6 +489,8 @@ def generate_response(prompt: str, mode_key: str, use_web: bool):
     except Exception:
         pass
 
+    elapsed = round(max(0.28, time.perf_counter() - start), 2)
+
     # 3. Web Grounded Synthesis (calibrated to selected model tier's speed & verbosity)
     if sources:
         tier_tokens_per_sec = {"EFFICIENT": 28.4, "BALANCED": 18.2, "HIGH": 10.1}[mode_key]
@@ -507,7 +509,7 @@ def generate_response(prompt: str, mode_key: str, use_web: bool):
         sim_latency = round(est_tokens / tier_tokens_per_sec, 2)
         answer_html = f"<b>{profile['name']}</b> · <i>Grounded with {len(sources)} live sources ({est_tokens} tokens)</i><br><br>{synthesized}"
         return answer_html, sim_latency, tier_tokens_per_sec, "Live Web Grounded", sources
-    
+
     # 4. Offline Edge Synthesis (always produces a real answer even with no Wi-Fi/Ollama)
     answer_html = build_tier_answer(prompt, mode_key)
     return answer_html, elapsed, float(profile["tok_s"]), "Edge AI Engine (Offline)", []
@@ -532,9 +534,9 @@ if "last_conf" not in st.session_state:
 with st.sidebar:
     st.markdown(
         '<div style="display:flex;align-items:center;gap:12px;padding:6px 4px 18px 4px;">'
-        '<div style="background:#2563EB;color:#FFFFFF !important;font-weight:700;font-size:18px;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;">A</div>'
+        '<div style="background:#2563EB;color:#FFFFFF !important;font-weight:700;font-size:18px;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;">S</div>'
         '<div>'
-        '<div style="color:#FFFFFF !important;font-weight:700;font-size:16px;line-height:1.1;">AdaptiLLM</div>'
+        '<div style="color:#FFFFFF !important;font-weight:700;font-size:16px;line-height:1.1;">SmartTier AI</div>'
         '<div style="color:#94A3B8 !important;font-size:12px;">Adaptive Edge AI · 2.0</div>'
         '</div></div>'
         '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748B !important;padding:0 8px 6px 8px;">WORKSPACE</div>',
@@ -609,7 +611,7 @@ if page == "Overview":
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
         '<span style="font-weight:700;font-size:15px;">Real-Time Web Grounding</span>'
         '<span class="badge-green">Live Enabled</span></div>'
-        '<div style="font-size:13px;color:#64748B;line-height:1.5;">AdaptiLLM retrieves verifiable context and synthesizes grounded answers with citations when web search is active.</div>'
+        '<div style="font-size:13px;color:#64748B;line-height:1.5;">SmartTier AI 2.0 retrieves verifiable context and synthesizes grounded answers with citations when web search is active.</div>'
         '</div>'
         '<div class="ui-card">'
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
@@ -773,12 +775,15 @@ elif page == "Resource Monitor":
     if b2.button("Read Live Laptop Sensors"):
         st.session_state.cpu = int(psutil.cpu_percent(interval=0.2))
         st.session_state.ram = int(psutil.virtual_memory().percent)
-        bat = psutil.sensors_battery()
-        st.session_state.battery = int(bat.percent) if bat else 80
+        try:
+            bat = psutil.sensors_battery()
+            st.session_state.battery = int(bat.percent) if bat else 80
+        except Exception:
+            st.session_state.battery = 80
         st.rerun()
 
     st.markdown(
-        '<div class="amber-banner"><strong>Safety Guardrails:</strong> If RAM exceeds 88% or battery drops below 18%, AdaptiLLM triggers an emergency override to <code>Compact Chat 0.5B</code> to preserve operating system responsiveness and avoid memory paging bottlenecks.</div>',
+        '<div class="amber-banner"><strong>Safety Guardrails:</strong> If RAM exceeds 88% or battery drops below 18%, SmartTier AI 2.0 triggers an emergency override to <code>Compact Chat 0.5B</code> to preserve operating system responsiveness and avoid memory paging bottlenecks.</div>',
         unsafe_allow_html=True,
     )
 
@@ -824,7 +829,7 @@ elif page == "Evaluation":
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:18px;"><div style="background:#94A3B8;width:100%;height:100%;border-radius:999px;"></div></div>'
             '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Heuristic Rule Policy</span><span style="background:#F1F5F9;color:#475569;padding:2px 8px;border-radius:999px;font-size:11px;">Prototype 1.0</span></div>'
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:18px;"><div style="background:#64748B;width:68%;height:100%;border-radius:999px;"></div></div>'
-            '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Adaptive ML Engine (AdaptiLLM 2.0)</span><span class="badge-blue">Active Policy</span></div>'
+            '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Adaptive ML Engine (SmartTier AI 2.0)</span><span class="badge-blue">Active Policy</span></div>'
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:16px;"><div style="background:#2563EB;width:42%;height:100%;border-radius:999px;"></div></div>'
             '<div style="font-size:12px;color:#64748B;">Relative normalized resource footprint (lower is more efficient).</div>'
             '</div>'
@@ -904,6 +909,6 @@ elif page == "Controlled Testing":
     )
 
 st.markdown(
-    '<div class="footer-caption">AdaptiLLM 2.0 · Dynamic AI Model Selection on Resource-Constrained Devices · Fully Working Edge Dashboard</div>',
+    '<div class="footer-caption">SmartTier AI 2.0 · Dynamic AI Model Selection on Resource-Constrained Devices · Fully Working Edge Dashboard</div>',
     unsafe_allow_html=True,
 )
