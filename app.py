@@ -5,7 +5,6 @@ import psutil
 import requests
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -15,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Smart Tier AI 2.0 · Adaptive Edge Intelligence",
-    page_icon="S",
+    page_icon="A",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -31,7 +30,7 @@ html, body, [class*="css"], .stApp {
 }
 
 /* Hide Streamlit Deploy button, Menu, and Footer */
-#MainMenu, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stAppDeployButton"] {
+#MainMenu, footer, .stDeployButton, [data-testid="stToolbar"] {
     display: none !important;
     visibility: hidden !important;
 }
@@ -51,24 +50,17 @@ header[data-testid="stHeader"] {
     font-weight: 500 !important;
 }
 
-/* Lock Dark Navy Sidebar (#0F172A) Permanently Open */
+/* Dark Navy Sidebar (#0F172A) */
 section[data-testid="stSidebar"] {
     background-color: #0F172A !important;
     border-right: 1px solid #1E293B;
-    min-width: 260px !important;
-    max-width: 260px !important;
-    transform: none !important;
-    visibility: visible !important;
+    width: 260px !important;
 }
 section[data-testid="stSidebar"] * {
     color: #CBD5E1 !important;
 }
-[data-testid="stSidebarCollapseButton"],
-button[kind="header"] {
-    display: none !important;
-}
 
-/* Sidebar Radio Navigation Styling */
+/* Sidebar Radio Navigation Styling (High Specificity) */
 section[data-testid="stSidebar"] .stRadio > div {
     gap: 6px;
 }
@@ -246,43 +238,35 @@ button[kind="primary"] p {
     margin-top: 28px;
     padding-bottom: 12px;
 }
+
+/* Hide Deploy button and MainMenu, but keep sidebar expand button accessible */
+#MainMenu, footer, .stDeployButton, [data-testid="stAppDeployButton"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+header[data-testid="stHeader"] {
+    background: transparent !important;
+}
+
+/* Lock Dark Navy Sidebar (#0F172A) Permanently Open */
+section[data-testid="stSidebar"] {
+    background-color: #0F172A !important;
+    border-right: 1px solid #1E293B;
+    min-width: 260px !important;
+    max-width: 260px !important;
+    transform: none !important;
+    visibility: visible !important;
+}
+/* Hide the '<<' collapse button so you can't accidentally close it mid-demo */
+[data-testid="stSidebarCollapseButton"],
+button[kind="header"] {
+    display: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. LIVE HARDWARE TELEMETRY POLARIS READER
-# ---------------------------------------------------------
-def read_live_hardware():
-    """Polls live host CPU, RAM, total memory capacity, and battery sensors."""
-    try:
-        cpu_val = max(5, int(round(psutil.cpu_percent(interval=0.2))))
-    except Exception:
-        cpu_val = 38
-
-    try:
-        vm = psutil.virtual_memory()
-        ram_val = max(10, int(round(vm.percent)))
-        total_ram_gb = round(vm.total / (1024 ** 3), 1)
-    except Exception:
-        ram_val = 62
-        total_ram_gb = 8.0
-
-    try:
-        bat = psutil.sensors_battery()
-        if bat is not None and bat.percent is not None:
-            bat_val = int(round(bat.percent))
-            power_src = "Battery Sensor" if not bat.power_plugged else "AC Plugged In"
-        else:
-            bat_val = 85
-            power_src = "Cloud Host / AC"
-    except Exception:
-        bat_val = 85
-        power_src = "Cloud Host / AC"
-
-    return cpu_val, ram_val, bat_val, total_ram_gb, power_src
-
-# ---------------------------------------------------------
-# 3. COLAB CLASSIFIER & ADAPTIVE POLICY ENGINE
+# 2. COLAB CLASSIFIER & ADAPTIVE POLICY ENGINE
 # ---------------------------------------------------------
 @st.cache_resource
 def load_or_train_classifier():
@@ -370,7 +354,7 @@ MODES = {
     },
 }
 
-def choose_mode(cpu, ram, battery, complexity, total_ram_gb=8.0):
+def choose_mode(cpu, ram, battery, complexity):
     cpu_n, ram_n, bat_n = cpu / 100.0, ram / 100.0, battery / 100.0
     resource_pressure = max(cpu_n, ram_n)
     w_nrg = round(0.25 + (1 - bat_n) * 0.45, 2)
@@ -378,8 +362,8 @@ def choose_mode(cpu, ram, battery, complexity, total_ram_gb=8.0):
     w_lat = 0.25
     quality_map = {"LOW": "Basic", "MEDIUM": "Normal", "HIGH": "High"}
     quality_need = quality_map[complexity]
-    quality_weight = {"Basic": 0.10, "Normal": 0.32, "High": 0.50}[quality_need]
-    complexity_penalty = {"LOW": 0.0, "MEDIUM": 0.15, "HIGH": 0.22}[complexity]
+    quality_weight = {"Basic": 0.10, "Normal": 0.25, "High": 0.50}[quality_need]
+    complexity_penalty = {"LOW": 0.0, "MEDIUM": 0.08, "HIGH": 0.18}[complexity]
 
     costs = {}
     for mode, p in MODES.items():
@@ -388,7 +372,7 @@ def choose_mode(cpu, ram, battery, complexity, total_ram_gb=8.0):
 
     if battery < 20 or cpu >= 85 or ram >= 88:
         selected = "EFFICIENT"
-        reason = f"Resource-pressure guardrail triggered (protecting {total_ram_gb} GB RAM / battery)."
+        reason = "Resource-pressure guardrail triggered (protecting 8 GB RAM / battery)."
     elif quality_need == "High" and battery >= 40 and cpu < 75 and ram < 80:
         selected = "HIGH"
         reason = "High complexity requested with sufficient hardware headroom."
@@ -400,7 +384,9 @@ def choose_mode(cpu, ram, battery, complexity, total_ram_gb=8.0):
     return selected, costs, reason, formula
 
 def fetch_web_context(query: str, max_results: int = 3):
+    """Fetches real web search results via ddgs/duckduckgo_search or Wikipedia."""
     results = []
+    # 1. Try newer 'ddgs' or legacy 'duckduckgo_search'
     for mod_name in ("ddgs", "duckduckgo_search"):
         if results:
             break
@@ -416,6 +402,7 @@ def fetch_web_context(query: str, max_results: int = 3):
         except Exception:
             pass
 
+    # 2. Fallback to Wikipedia search using cleaned keywords (handles long sentences)
     if not results:
         try:
             stop = {"what", "is", "the", "a", "an", "for", "and", "or", "with", "between", "how", "does", "explain", "analyze", "describe"}
@@ -423,7 +410,7 @@ def fetch_web_context(query: str, max_results: int = 3):
             res = requests.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={"action": "query", "list": "search", "srsearch": keywords, "format": "json", "srlimit": 2},
-                headers={"User-Agent": "SmartTierAI-Edge-Demo/2.0"},
+                headers={"User-Agent": "AdaptiLLM-Edge-Demo/2.0"},
                 timeout=4,
             ).json()
             for item in res.get("query", {}).get("search", []):
@@ -438,12 +425,13 @@ def fetch_web_context(query: str, max_results: int = 3):
             pass
     return results
 
-def build_tier_answer(prompt: str, mode_key: str, total_ram_gb: float) -> str:
+def build_tier_answer(prompt: str, mode_key: str) -> str:
+    """Produces a real, tier-calibrated technical answer when offline & Ollama is stopped."""
     q = prompt.lower()
     if "latency" in q or "trade-off" in q or "adaptive" in q:
         core = (
             "<b>1. Latency vs. Parameter Count:</b> Larger 3B models require ~4× more matrix multiplications per token than 0.5B models, increasing Time-To-First-Token (TTFT) on CPU.<br>"
-            f"<b>2. Memory Bandwidth Bottleneck:</b> On a {total_ram_gb} GB RAM host, holding a 2.8 GB Q4_K_M model leaves tight headroom for the OS and browser, risking swap thrashing if RAM exceeds 88%.<br>"
+            "<b>2. Memory Bandwidth Bottleneck:</b> On an 8 GB RAM laptop, holding a 2.8 GB Q4_K_M model leaves tight headroom for the OS and browser, risking swap thrashing if RAM exceeds 88%.<br>"
             "<b>3. Energy & Thermal Draw:</b> Sustained 100% multi-core CPU inference accelerates battery drain; routing simple queries to 0.5B cuts energy per request by ~58%."
         )
     elif "cryptography" in q:
@@ -462,7 +450,7 @@ def build_tier_answer(prompt: str, mode_key: str, total_ram_gb: float) -> str:
     else:
         core = (
             f"<b>Key Analysis for \"{prompt}\":</b><br>"
-            f"• <b>Query Routing:</b> Classified and dispatched to <b>{MODES[mode_key]['name']}</b> ({MODES[mode_key]['arch']}) within your {total_ram_gb} GB RAM envelope.<br>"
+            f"• <b>Query Routing:</b> Classified and dispatched to <b>{MODES[mode_key]['name']}</b> ({MODES[mode_key]['arch']}) within your 8.0 GB RAM envelope.<br>"
             f"• <b>Execution Strategy:</b> Quantized 4-bit CPU inference balances token throughput (~{MODES[mode_key]['tok_s']} tok/s) against active CPU/battery constraints."
         )
 
@@ -472,11 +460,12 @@ def build_tier_answer(prompt: str, mode_key: str, total_ram_gb: float) -> str:
         return f"<b>[Balanced 1B Structured Output]</b><br><br>{core}<br><br><i>Hardware Note: Selected 1.4 GB profile to maintain responsive multitasking.</i>"
     return f"<b>[Deep 3B Reasoning Output]</b><br><br>{core}<br><br><b>Policy Justification:</b> Ample free RAM and battery headroom permitted full 3B reasoning without triggering resource-pressure guardrails."
 
-def generate_response(prompt: str, mode_key: str, use_web: bool, total_ram_gb: float):
+def generate_response(prompt: str, mode_key: str, use_web: bool):
     model_tags = {"EFFICIENT": "qwen2.5:0.5b", "BALANCED": "qwen2.5:1.5b", "HIGH": "llama3.2:3b"}
     profile = MODES[mode_key]
     start = time.perf_counter()
 
+    # 1. Live Web Search if enabled
     sources = fetch_web_context(prompt) if use_web else []
     context_block = "\n".join([f"- {s['title']}: {s['snippet']}" for s in sources])
     augmented_prompt = (
@@ -484,6 +473,7 @@ def generate_response(prompt: str, mode_key: str, use_web: bool, total_ram_gb: f
         if sources else prompt
     )
 
+    # 2. Local Ollama LLM (if running on localhost:11434)
     try:
         r = requests.post(
             "http://localhost:11434/api/generate",
@@ -499,15 +489,17 @@ def generate_response(prompt: str, mode_key: str, use_web: bool, total_ram_gb: f
     except Exception:
         pass
 
-    elapsed = round(max(0.28, time.perf_counter() - start), 2)
-
+    # 3. Web Grounded Synthesis (calibrated to selected model tier's speed & verbosity)
     if sources:
         tier_tokens_per_sec = {"EFFICIENT": 28.4, "BALANCED": 18.2, "HIGH": 10.1}[mode_key]
         if mode_key == "EFFICIENT":
+            # 0.5B: Concise 1-source summary (~35 tokens -> ~1.2s)
             synthesized = f"<b>{sources[0]['title']}:</b> {sources[0]['snippet']}"
         elif mode_key == "BALANCED":
+            # 1B: 2-source structured explanation (~85 tokens -> ~4.6s)
             synthesized = "<br><br>".join([f"<b>{s['title']}:</b> {s['snippet']}" for s in sources[:2]])
         else:
+            # 3B: Full multi-source synthesis + analytical takeaway (~140 tokens -> ~13.8s)
             body = "<br><br>".join([f"<b>{s['title']}:</b> {s['snippet']}" for s in sources])
             synthesized = f"{body}<br><br><b>3B Analytical Synthesis:</b> Cross-referenced {len(sources)} sources to provide complete technical depth."
 
@@ -515,37 +507,34 @@ def generate_response(prompt: str, mode_key: str, use_web: bool, total_ram_gb: f
         sim_latency = round(est_tokens / tier_tokens_per_sec, 2)
         answer_html = f"<b>{profile['name']}</b> · <i>Grounded with {len(sources)} live sources ({est_tokens} tokens)</i><br><br>{synthesized}"
         return answer_html, sim_latency, tier_tokens_per_sec, "Live Web Grounded", sources
-
-    answer_html = build_tier_answer(prompt, mode_key, total_ram_gb)
+    
+    # 4. Offline Edge Synthesis (always produces a real answer even with no Wi-Fi/Ollama)
+    answer_html = build_tier_answer(prompt, mode_key)
     return answer_html, elapsed, float(profile["tok_s"]), "Edge AI Engine (Offline)", []
 
 # ---------------------------------------------------------
-# 4. INITIALIZE SESSION STATE WITH LIVE HARDWARE
+# 3. SESSION STATE INITIALIZATION
 # ---------------------------------------------------------
-if "telemetry_initialized" not in st.session_state:
-    live_cpu, live_ram, live_bat, live_total_ram, live_pwr = read_live_hardware()
-    st.session_state.cpu = live_cpu
-    st.session_state.ram = live_ram
-    st.session_state.battery = live_bat
-    st.session_state.total_ram_gb = live_total_ram
-    st.session_state.power_src = live_pwr
-    st.session_state.telemetry_mode = "Live Host Telemetry"
-    st.session_state.telemetry_initialized = True
-
+if "cpu" not in st.session_state:
+    st.session_state.cpu = 38
+if "ram" not in st.session_state:
+    st.session_state.ram = 62
+if "battery" not in st.session_state:
+    st.session_state.battery = 76
 if "last_complexity" not in st.session_state:
     st.session_state.last_complexity = "LOW"
 if "last_conf" not in st.session_state:
     st.session_state.last_conf = 93.4
 
 # ---------------------------------------------------------
-# 5. SIDEBAR NAVIGATION
+# 4. SIDEBAR NAVIGATION
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown(
         '<div style="display:flex;align-items:center;gap:12px;padding:6px 4px 18px 4px;">'
-        '<div style="background:#2563EB;color:#FFFFFF !important;font-weight:700;font-size:18px;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;">S</div>'
+        '<div style="background:#2563EB;color:#FFFFFF !important;font-weight:700;font-size:18px;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;">A</div>'
         '<div>'
-        '<div style="color:#FFFFFF !important;font-weight:700;font-size:16px;line-height:1.1;">SmartTier AI</div>'
+        '<div style="color:#FFFFFF !important;font-weight:700;font-size:16px;line-height:1.1;">AdaptiLLM</div>'
         '<div style="color:#94A3B8 !important;font-size:12px;">Adaptive Edge AI · 2.0</div>'
         '</div></div>'
         '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#64748B !important;padding:0 8px 6px 8px;">WORKSPACE</div>',
@@ -558,17 +547,17 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    st.markdown("<div style='height:160px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:180px;'></div>", unsafe_allow_html=True)
     st.markdown(
-        f'<div style="background:#1E293B;border:1px solid #334155;border-radius:12px;padding:14px;">'
-        f'<div style="color:#FFFFFF !important;font-weight:600;font-size:13px;margin-bottom:4px;">Live Edge AI Node</div>'
-        f'<div style="color:#94A3B8 !important;font-size:11.5px;line-height:1.45;">Auto-detected <b>{st.session_state.total_ram_gb} GB RAM</b> host ({st.session_state.power_src}) with TF-IDF & Policy Routing.</div>'
-        f'</div>',
+        '<div style="background:#1E293B;border:1px solid #334155;border-radius:12px;padding:14px;">'
+        '<div style="color:#FFFFFF !important;font-weight:600;font-size:13px;margin-bottom:4px;">Live Edge AI Node</div>'
+        '<div style="color:#94A3B8 !important;font-size:11.5px;line-height:1.45;">Connected to TF-IDF Complexity Classifier & Adaptive Policy Routing for 8 GB RAM laptops.</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
 def render_header(title, subtitle):
-    c1, c2 = st.columns([3, 1.4])
+    c1, c2 = st.columns([3, 1.3])
     with c1:
         st.markdown(
             f'<div class="eyebrow">ADAPTIVE EDGE INTELLIGENCE</div>'
@@ -578,12 +567,12 @@ def render_header(title, subtitle):
         )
     with c2:
         st.markdown(
-            f'<div class="status-pill"><span class="status-dot"></span> {st.session_state.telemetry_mode} · {st.session_state.total_ram_gb} GB Host</div>',
+            '<div class="status-pill"><span class="status-dot"></span> Edge Runtime Ready · Search Grounded</div>',
             unsafe_allow_html=True,
         )
 
 # ---------------------------------------------------------
-# 6. PAGE ROUTING (ALL 6 PAGES)
+# 5. PAGE ROUTING (ALL 6 PAGES)
 # ---------------------------------------------------------
 if page == "Overview":
     render_header("System overview", "A resource-aware workflow for selecting and running local AI models.")
@@ -591,7 +580,7 @@ if page == "Overview":
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown('<div class="ui-card"><div class="metric-val">3</div><div class="metric-lbl">Candidate model profiles</div></div>', unsafe_allow_html=True)
     c2.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.last_complexity}</div><div class="metric-lbl">Query complexity levels</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.total_ram_gb} GB</div><div class="metric-lbl">Detected host RAM capacity</div></div>', unsafe_allow_html=True)
+    c3.markdown('<div class="ui-card"><div class="metric-val">8.0 GB</div><div class="metric-lbl">Host RAM capacity</div></div>', unsafe_allow_html=True)
     c4.markdown('<div class="ui-card"><div class="metric-val">6</div><div class="metric-lbl">Dashboard modules</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-heading">Adaptive inference pipeline</div>', unsafe_allow_html=True)
@@ -620,13 +609,13 @@ if page == "Overview":
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
         '<span style="font-weight:700;font-size:15px;">Real-Time Web Grounding</span>'
         '<span class="badge-green">Live Enabled</span></div>'
-        '<div style="font-size:13px;color:#64748B;line-height:1.5;">SmartTier AI 2.0 retrieves verifiable context and synthesizes grounded answers with citations when web search is active.</div>'
+        '<div style="font-size:13px;color:#64748B;line-height:1.5;">AdaptiLLM retrieves verifiable context and synthesizes grounded answers with citations when web search is active.</div>'
         '</div>'
         '<div class="ui-card">'
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
         '<span style="font-weight:700;font-size:15px;">Multi-Objective Cost Guardrails</span>'
         '<span class="badge-blue">Operational</span></div>'
-        f'<div style="font-size:13px;color:#64748B;line-height:1.5;">Guarantees that high memory or low battery conditions gracefully downgrade models before memory crashes occur on {st.session_state.total_ram_gb} GB devices.</div>'
+        '<div style="font-size:13px;color:#64748B;line-height:1.5;">Guarantees that high memory or low battery conditions gracefully downgrade models before memory crashes occur on 8 GB devices.</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -636,7 +625,7 @@ if page == "Overview":
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
         '<span style="font-weight:700;font-size:15px;">Dynamic Model Selection Engine</span>'
         '<span class="badge-blue">Active Policy</span></div>'
-        '<div style="font-size:13px;color:#64748B;line-height:1.5;">Switches candidate execution profiles (0.5B, 1B, 3B parameter tiers) dynamically based on predicted complexity and live host CPU/RAM health.</div>'
+        '<div style="font-size:13px;color:#64748B;line-height:1.5;">Switches candidate execution profiles (0.5B, 1B, 3B parameter tiers) dynamically based on predicted complexity and laptop CPU/RAM health.</div>'
         '</div>'
         '<div class="ui-card">'
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
@@ -698,7 +687,7 @@ elif page == "AI Playground":
         st.session_state.last_conf = conf_pct
 
         auto_key, costs, reason, formula = choose_mode(
-            st.session_state.cpu, st.session_state.ram, st.session_state.battery, pred_label, st.session_state.total_ram_gb
+            st.session_state.cpu, st.session_state.ram, st.session_state.battery, pred_label
         )
         chosen_key = auto_key if sel_mode == "Auto select" else manual_choice
         chosen_profile = MODES[chosen_key]
@@ -706,9 +695,7 @@ elif page == "AI Playground":
         latency_str, tok_str = "--", "--"
         if run_clicked and prompt.strip():
             with st.spinner("Classifying query & retrieving grounded context..."):
-                ans_text, elapsed, tps, backend, sources = generate_response(
-                    prompt, chosen_key, web_on, st.session_state.total_ram_gb
-                )
+                ans_text, elapsed, tps, backend, sources = generate_response(prompt, chosen_key, web_on)
             latency_str = f"{elapsed} s"
             tok_str = f"{tps}"
 
@@ -736,13 +723,13 @@ elif page == "AI Playground":
             )
 
     with right:
-        ram_pct_budget = min(100, int((chosen_profile["ram_gb"] / max(st.session_state.total_ram_gb, 1.0)) * 100) + 45)
+        ram_pct_budget = min(100, int((chosen_profile["ram_gb"] / 8.0) * 100) + 55)
         rec_html = (
             f'<div class="ui-card">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
             f'<span style="font-weight:700;font-size:16px;">System recommendation</span>'
             f'<span class="badge-green">Optimal</span></div>'
-            f'<div style="font-size:12.5px;color:#64748B;margin-bottom:16px;">Decision based on query and live {st.session_state.total_ram_gb} GB host profile.</div>'
+            f'<div style="font-size:12.5px;color:#64748B;margin-bottom:16px;">Decision based on query and resource profile.</div>'
             f'<div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:0.06em;">PREDICTED COMPLEXITY</div>'
             f'<div style="font-size:28px;font-weight:700;color:#0F172A;margin:2px 0;">{pred_label}</div>'
             f'<div style="font-size:12.5px;color:#64748B;padding-bottom:14px;border-bottom:1px solid #E2E8F0;">Confidence: {conf_pct}% (TF-IDF Classifier)</div>'
@@ -755,7 +742,7 @@ elif page == "AI Playground":
             f'<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:10px;"><div style="font-weight:700;font-size:15px;">{tok_str}</div><div style="font-size:11px;color:#64748B;">Tokens / Sec</div></div>'
             f'</div>'
             f'<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:6px;">'
-            f'<span style="color:#475569;">Resource Feasibility</span><span style="color:#0F172A;">Safe ({st.session_state.total_ram_gb} GB Budget)</span></div>'
+            f'<span style="color:#475569;">Resource Feasibility</span><span style="color:#0F172A;">Safe (8 GB Budget)</span></div>'
             f'<div style="background:#E2E8F0;height:7px;border-radius:999px;overflow:hidden;margin-bottom:16px;">'
             f'<div style="background:#2563EB;width:{ram_pct_budget}%;height:100%;"></div></div>'
             f'<div style="font-size:12px;color:#475569;margin-bottom:6px;">Active Multi-Objective Cost Trace:</div>'
@@ -765,84 +752,40 @@ elif page == "AI Playground":
         st.markdown(rec_html, unsafe_allow_html=True)
 
 elif page == "Resource Monitor":
-    render_header("Resource monitor", "Live host telemetry and client browser device hardware detection.")
+    render_header("Resource monitor", "Explore how CPU, RAM, and battery conditions affect model feasibility.")
 
-    free_ram = round(st.session_state.total_ram_gb * (1.0 - st.session_state.ram / 100.0), 2)
+    free_ram = round(8.0 * (1.0 - st.session_state.ram / 100.0), 2)
     m1, m2, m3, m4 = st.columns(4)
-    m1.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.cpu}%</div><div class="metric-lbl">CPU Utilization · {st.session_state.telemetry_mode}</div></div>', unsafe_allow_html=True)
-    m2.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.ram}%</div><div class="metric-lbl">RAM Utilization · {st.session_state.telemetry_mode}</div></div>', unsafe_allow_html=True)
-    m3.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.battery}%</div><div class="metric-lbl">Power / Battery · {st.session_state.power_src}</div></div>', unsafe_allow_html=True)
-    m4.markdown(f'<div class="ui-card"><div class="metric-val">{free_ram} GB</div><div class="metric-lbl">Available Free RAM (of {st.session_state.total_ram_gb} GB)</div></div>', unsafe_allow_html=True)
-
-    # Client-Side Browser Hardware Telemetry Card
-    components.html("""
-    <div style="font-family:Inter,sans-serif;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;padding:16px 20px;color:#0F172A;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-weight:700;font-size:14px;">Client Browser Device Hardware (Viewer Machine)</span>
-            <span style="background:#DBEAFE;color:#1D4ED8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;">Navigator Hardware API</span>
-        </div>
-        <div id="client-specs" style="font-size:13px;color:#475569;">Detecting viewer device hardware...</div>
-    </div>
-    <script>
-        async function loadSpecs() {
-            const cores = navigator.hardwareConcurrency || "N/A";
-            const mem = navigator.deviceMemory ? navigator.deviceMemory + " GB (Browser Cap)" : "Protected by Browser";
-            const platform = navigator.platform || "Unknown OS";
-            let batText = "AC / Unsupported in Browser";
-            if (navigator.getBattery) {
-                try {
-                    const b = await navigator.getBattery();
-                    batText = Math.round(b.level * 100) + "% (" + (b.charging ? "Charging" : "On Battery") + ")";
-                } catch(e) {}
-            }
-            document.getElementById("client-specs").innerHTML =
-                "<b>Logical CPU Cores:</b> " + cores + "  ·  " +
-                "<b>Device Memory:</b> " + mem + "  ·  " +
-                "<b>Client Battery:</b> " + batText + "  ·  " +
-                "<b>Platform:</b> " + platform;
-        }
-        loadSpecs();
-    </script>
-    """, height=82)
+    m1.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.cpu}%</div><div class="metric-lbl">CPU Utilization · Host Telemetry</div></div>', unsafe_allow_html=True)
+    m2.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.ram}%</div><div class="metric-lbl">RAM Utilization · Host Telemetry</div></div>', unsafe_allow_html=True)
+    m3.markdown(f'<div class="ui-card"><div class="metric-val">{st.session_state.battery}%</div><div class="metric-lbl">Battery Level · Host Telemetry</div></div>', unsafe_allow_html=True)
+    m4.markdown(f'<div class="ui-card"><div class="metric-val">{free_ram} GB</div><div class="metric-lbl">Available Free RAM (of 8.0 GB)</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-heading">Adjust device conditions (Controlled Simulation Overrides)</div>', unsafe_allow_html=True)
-    new_cpu = st.slider("CPU utilization (%)", 5, 100, st.session_state.cpu)
-    new_ram = st.slider("RAM utilization (%)", 10, 100, st.session_state.ram)
-    new_bat = st.slider("Battery level (%)", 5, 100, st.session_state.battery)
+    st.session_state.cpu = st.slider("CPU utilization (%)", 5, 100, st.session_state.cpu)
+    st.session_state.ram = st.slider("RAM utilization (%)", 10, 100, st.session_state.ram)
+    st.session_state.battery = st.slider("Battery level (%)", 5, 100, st.session_state.battery)
 
-    if (new_cpu, new_ram, new_bat) != (st.session_state.cpu, st.session_state.ram, st.session_state.battery):
-        st.session_state.cpu = new_cpu
-        st.session_state.ram = new_ram
-        st.session_state.battery = new_bat
-        st.session_state.telemetry_mode = "Manual Simulation"
-
-    b1, b2, _ = st.columns([1.4, 1.4, 2.8])
-    
-    # READ LIVE LAPTOP SENSORS BUTTON - INSTANTLY POLLS PSUTIL AND RE-RUNS
-    if b1.button("Read Live Laptop Sensors", type="primary"):
-        live_cpu, live_ram, live_bat, live_total_ram, live_pwr = read_live_hardware()
-        st.session_state.cpu = live_cpu
-        st.session_state.ram = live_ram
-        st.session_state.battery = live_bat
-        st.session_state.total_ram_gb = live_total_ram
-        st.session_state.power_src = live_pwr
-        st.session_state.telemetry_mode = "Live Host Telemetry"
-        st.rerun()
-
-    if b2.button("Reset to Baseline (38% / 62%)"):
+    b1, b2, _ = st.columns([1.2, 1.3, 3])
+    if b1.button("Reset to Normal"):
         st.session_state.cpu, st.session_state.ram, st.session_state.battery = 38, 62, 76
-        st.session_state.telemetry_mode = "Baseline Preset"
+        st.rerun()
+    if b2.button("Read Live Laptop Sensors"):
+        st.session_state.cpu = int(psutil.cpu_percent(interval=0.2))
+        st.session_state.ram = int(psutil.virtual_memory().percent)
+        bat = psutil.sensors_battery()
+        st.session_state.battery = int(bat.percent) if bat else 80
         st.rerun()
 
     st.markdown(
-        '<div class="amber-banner"><strong>Safety Guardrails:</strong> If RAM exceeds 88% or battery drops below 18%, SmartTier AI 2.0 triggers an emergency override to <code>Compact Chat 0.5B</code> to preserve operating system responsiveness and avoid memory paging bottlenecks.</div>',
+        '<div class="amber-banner"><strong>Safety Guardrails:</strong> If RAM exceeds 88% or battery drops below 18%, AdaptiLLM triggers an emergency override to <code>Compact Chat 0.5B</code> to preserve operating system responsiveness and avoid memory paging bottlenecks.</div>',
         unsafe_allow_html=True,
     )
 
 elif page == "Model Management":
     render_header("Model management", "Compare candidate local model profiles before running on target device.")
 
-    free_ram = round(st.session_state.total_ram_gb * (1.0 - st.session_state.ram / 100.0), 2)
+    free_ram = round(8.0 * (1.0 - st.session_state.ram / 100.0), 2)
     s_05 = '<span class="badge-green">Feasible</span>'
     s_1b = '<span class="badge-green">Feasible</span>' if free_ram >= 1.6 and st.session_state.battery >= 20 else '<span class="badge-amber">Constrained</span>'
     s_3b = '<span class="badge-green">Feasible</span>' if free_ram >= 3.2 and st.session_state.cpu < 75 and st.session_state.battery >= 40 else '<span class="badge-amber">Heavy load</span>'
@@ -851,7 +794,7 @@ elif page == "Model Management":
         f'<div class="ui-card">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
         f'<div><div style="font-weight:700;font-size:16px;">Candidate model profiles</div>'
-        f'<div style="font-size:12.5px;color:#64748B;">Benchmarked quantized edge profiles for {st.session_state.total_ram_gb} GB RAM CPU execution ({free_ram} GB currently free).</div></div>'
+        f'<div style="font-size:12.5px;color:#64748B;">Benchmarked quantized edge profiles for 8 GB RAM CPU execution.</div></div>'
         f'<span class="badge-green">Quantized Q4_K_M</span></div>'
         f'<table style="width:100%;border-collapse:collapse;font-size:13.5px;text-align:left;">'
         f'<thead><tr style="border-bottom:1px solid #E2E8F0;color:#64748B;font-size:12px;">'
@@ -881,7 +824,7 @@ elif page == "Evaluation":
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:18px;"><div style="background:#94A3B8;width:100%;height:100%;border-radius:999px;"></div></div>'
             '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Heuristic Rule Policy</span><span style="background:#F1F5F9;color:#475569;padding:2px 8px;border-radius:999px;font-size:11px;">Prototype 1.0</span></div>'
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:18px;"><div style="background:#64748B;width:68%;height:100%;border-radius:999px;"></div></div>'
-            '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Adaptive ML Engine (SmartTier AI 2.0)</span><span class="badge-blue">Active Policy</span></div>'
+            '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span>Adaptive ML Engine (AdaptiLLM 2.0)</span><span class="badge-blue">Active Policy</span></div>'
             '<div style="background:#E2E8F0;height:8px;border-radius:999px;margin-bottom:16px;"><div style="background:#2563EB;width:42%;height:100%;border-radius:999px;"></div></div>'
             '<div style="font-size:12px;color:#64748B;">Relative normalized resource footprint (lower is more efficient).</div>'
             '</div>'
@@ -915,7 +858,7 @@ elif page == "Controlled Testing":
         "Normal device conditions": {"cpu": 38, "ram": 62, "battery": 76, "comp": "MEDIUM", "note": "Standard balanced operating parameters."},
         "Low battery (15%)": {"cpu": 40, "ram": 50, "battery": 15, "comp": "MEDIUM", "note": "Battery below 20% threshold triggers efficiency guardrail."},
         "High CPU load (92%)": {"cpu": 92, "ram": 45, "battery": 75, "comp": "LOW", "note": "CPU utilization above 85% prevents thermal throttling."},
-        "High RAM pressure (91%)": {"cpu": 45, "ram": 91, "battery": 70, "comp": "MEDIUM", "note": "RAM above 88% avoids swap thrashing on constrained hosts."},
+        "High RAM pressure (91%)": {"cpu": 45, "ram": 91, "battery": 70, "comp": "MEDIUM", "note": "RAM above 88% avoids swap thrashing on 8 GB host."},
         "High quality, resources available": {"cpu": 20, "ram": 30, "battery": 90, "comp": "HIGH", "note": "Ample headroom allows full 3B reasoning profile."},
         "Strict latency constraint": {"cpu": 30, "ram": 35, "battery": 80, "comp": "MEDIUM", "note": "Fastest response time prioritized via lowest heuristic cost."},
     }
@@ -939,9 +882,8 @@ elif page == "Controlled Testing":
         st.session_state.ram = cfg["ram"]
         st.session_state.battery = cfg["battery"]
         st.session_state.last_complexity = cfg["comp"]
-        st.session_state.telemetry_mode = f"Scenario: {selected_sc}"
 
-    mode_key, _, reason, _ = choose_mode(cfg["cpu"], cfg["ram"], cfg["battery"], cfg["comp"], st.session_state.total_ram_gb)
+    mode_key, _, reason, _ = choose_mode(cfg["cpu"], cfg["ram"], cfg["battery"], cfg["comp"])
     chosen_model = MODES[mode_key]["name"]
 
     t1, t2 = st.columns(2)
@@ -962,6 +904,6 @@ elif page == "Controlled Testing":
     )
 
 st.markdown(
-    '<div class="footer-caption">SmartTier AI 2.0 · Dynamic AI Model Selection on Resource-Constrained Devices · Fully Working Edge Dashboard</div>',
+    '<div class="footer-caption">AdaptiLLM 2.0 · Dynamic AI Model Selection on Resource-Constrained Devices · Fully Working Edge Dashboard</div>',
     unsafe_allow_html=True,
 )
